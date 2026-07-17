@@ -24,7 +24,7 @@
   #book { width: 100%; height: 100%; transition: transform .5s ease; will-change: transform; }
   #book .page {
     background: #fff;
-    box-shadow: 0 2px 10px rgba(0,0,0,.18);
+    overflow: hidden;
   }
   #book .page img {
     width: 100%;
@@ -33,6 +33,7 @@
     display: block;
     -webkit-user-drag: none;
     user-select: none;
+    pointer-events: none;
   }
   #toolbar {
     flex: none;
@@ -96,12 +97,20 @@
 <script>
 (function () {
   var PAGE_COUNT = 36;
-  var pages = [];
+  var book = document.getElementById("book");
+
   for (var i = 1; i <= PAGE_COUNT; i++) {
-    pages.push("pages/page-" + String(i).padStart(2, "0") + ".jpg");
+    var div = document.createElement("div");
+    div.className = "page";
+    if (i === 1 || i === PAGE_COUNT) div.setAttribute("data-density", "hard");
+    var img = document.createElement("img");
+    img.src = "pages/page-" + String(i).padStart(2, "0") + ".jpg";
+    img.alt = "Strana " + i;
+    div.appendChild(img);
+    book.appendChild(div);
   }
 
-  var pageFlip = new St.PageFlip(document.getElementById("book"), {
+  var pageFlip = new St.PageFlip(book, {
     width: 910,
     height: 1287,
     size: "stretch",
@@ -116,15 +125,14 @@
     flippingTime: 700
   });
 
-  pageFlip.loadFromImages(pages);
+  pageFlip.loadFromHTML(book.querySelectorAll(".page"));
 
   var counter = document.getElementById("counter");
   var prevBtn = document.getElementById("prev");
   var nextBtn = document.getElementById("next");
-  var book = document.getElementById("book");
 
-  // obálka a zadní strana stojí samostatně: vycentrovat a nekreslit gradient hřbetu
-  function coverAlone() {
+  // obálka a zadní strana stojí samostatně, kniha se posune, aby byly na středu
+  function coverShift() {
     if (pageFlip.getOrientation() !== "landscape") return 0;
     var idx = pageFlip.getCurrentPageIndex();
     if (idx <= 0) return -1;
@@ -137,17 +145,12 @@
     counter.textContent = current + " / " + PAGE_COUNT;
     prevBtn.disabled = current <= 1;
     nextBtn.disabled = current >= PAGE_COUNT;
-    var side = coverAlone();
+    var side = coverShift();
     book.style.transform = side ? "translateX(" + (side * 25) + "%)" : "";
   }
 
   pageFlip.on("init", function () {
     document.getElementById("loading").style.display = "none";
-    var render = pageFlip.getRender();
-    var origShadow = render.drawBookShadow.bind(render);
-    render.drawBookShadow = function () {
-      if (!coverAlone()) origShadow();
-    };
     update();
   });
   pageFlip.on("flip", update);
@@ -159,6 +162,20 @@
     if (e.key === "ArrowLeft") pageFlip.flipPrev();
     if (e.key === "ArrowRight") pageFlip.flipNext();
   });
+
+  // listování kolečkem myši / trackpadem nad katalogem
+  var lastWheelFlip = 0;
+  document.addEventListener("wheel", function (e) {
+    var dir = e.deltaY > 0 ? 1 : -1;
+    var current = pageFlip.getCurrentPageIndex() + 1;
+    var canFlip = dir > 0 ? current < PAGE_COUNT : current > 1;
+    if (!canFlip) return; // na krajích nechat scroll projít na rodičovskou stránku
+    e.preventDefault();
+    var now = Date.now();
+    if (now - lastWheelFlip < 900) return;
+    lastWheelFlip = now;
+    if (dir > 0) pageFlip.flipNext(); else pageFlip.flipPrev();
+  }, { passive: false });
 
   document.getElementById("fs").addEventListener("click", function () {
     var el = document.documentElement;
